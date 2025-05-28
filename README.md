@@ -1,171 +1,219 @@
-# Foliage Pixel Probe
+# PlantVillage Disease Detection - Production-Ready Guide
 
-A mobile application for analyzing and identifying plant foliage using image processing and machine learning techniques.
+## Project Overview
+This project provides an end-to-end pipeline for plant disease detection using deep learning. It covers everything from data preparation, model training (with a focus on achieving 95%+ accuracy), evaluation, prediction, UI integration, and production deployment.
 
-## Features
+---
 
-- Plant identification through image capture
-- Detailed plant information and care instructions
-- Offline database support
-- Cross-platform compatibility (iOS and Android)
+## Table of Contents
+- [Requirements](#requirements)
+- [Environment Setup](#environment-setup)
+- [Data Preparation](#data-preparation)
+- [Model Training](#model-training)
+- [Model Evaluation](#model-evaluation)
+- [Prediction (Batch & Single)](#prediction-batch--single)
+- [UI Integration](#ui-integration)
+- [Production Deployment](#production-deployment)
+- [Advanced Tips for High Accuracy](#advanced-tips-for-high-accuracy)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [AI Agent Prompt](#ai-agent-prompt)
 
-## Development
+---
 
-### Prerequisites
+## Requirements
+- Python 3.8+
+- pip
+- [CUDA-enabled GPU (recommended for training)]
+- Git
+- Node.js & npm (for UI)
 
-- Node.js (v18 or higher)
-- npm or yarn
-- Android Studio (for Android development)
-- Xcode (for iOS development, macOS only)
+### Python Packages
+Install all required Python packages:
+```bash
+pip install -r requirements.txt
+```
 
-### Installation
+---
 
-1. Clone the repository
-2. Install dependencies:
+## Environment Setup
+1. **Clone the repository:**
    ```bash
+   git clone https://github.com/aloksingh1818/LeafArea_production.git
+   cd LeafArea_production
+   ```
+2. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **(Optional) Set up a virtual environment:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+4. **Install Node.js dependencies for the UI:**
+   ```bash
+   cd <ui-folder>  # e.g., 'frontend' or 'app' if present
    npm install
+   cd ..
    ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-### Building for Production
-
-```bash
-npm run build
-```
-
-### Running on Mobile Devices
-
-For Android:
-```bash
-npm run capacitor:sync
-npm run capacitor:open:android
-```
-
-For iOS:
-```bash
-npm run capacitor:sync
-npm run capacitor:open:ios
-```
-
-## Plant Disease Model (Keras)
-
-This project includes a deep learning model for plant disease classification using the PlantVillage dataset. The model is trained using TensorFlow/Keras and saved as `plant_disease_model.keras`.
-
-### Model Training
-
-- Training script: `train_plantvillage_cnn.py`
-- Data: `plantvillage_data/` (organized by class)
-- To retrain the model:
-  ```bash
-  python train_plantvillage_cnn.py
-  ```
-- The script will print validation accuracy and loss after training.
-
-### Model Evaluation
-
-After training, the script evaluates the model on the validation set and prints accuracy and loss.
-
-### Model API (FastAPI)
-
-A FastAPI backend is provided for real-time predictions:
-- Script: `plant_disease_api.py`
-- To run the API:
-  ```bash
-  uvicorn plant_disease_api:app --reload --host 0.0.0.0 --port 8000
-  ```
-- Endpoint: `POST /predict` (upload an image to get prediction)
-
-### Frontend
-
-A basic frontend for image upload and prediction display can be added (see project roadmap).
-
-### Data Augmentation
-
-The training script uses Keras `ImageDataGenerator` for data augmentation (rotation, shift, shear, zoom, flip).
-
-### Continuous Integration
-
-A GitHub Actions workflow (`.github/workflows/ci.yml`) runs basic checks on push and pull requests.
-
-### Project Roadmap
-
-- [x] Model training and evaluation
-- [x] Model API deployment
-- [ ] Frontend UI for predictions
-- [x] Data augmentation
-- [x] CI/CD pipeline
 
 ---
 
-## Plant Disease Prediction API
-
-### Running the API
-
-1. Install Python dependencies:
+## Data Preparation
+1. **Download and organize the dataset:**
+   - Place your raw PlantVillage dataset in the `plantvillage_data/` directory.
+   - The structure should be:
+     ```
+     plantvillage_data/
+       ├── Class1/
+       ├── Class2/
+       └── ...
+     ```
+2. **Verify and split the dataset:**
    ```bash
-   pip install fastapi uvicorn tensorflow numpy python-multipart
+   python verify_and_split_dataset.py
    ```
-2. Start the API server:
-   ```bash
-   uvicorn plant_disease_api:app --host 0.0.0.0 --port 8000 --reload
-   ```
-
-### API Endpoints
-- `POST /predict` — Upload an image file (form field: `file`). Returns predicted class and confidence.
-- `GET /health` — Health check endpoint.
-
-#### Example request (Python):
-```python
-import requests
-url = "http://localhost:8000/predict"
-with open("path_to_image.jpg", "rb") as f:
-    response = requests.post(url, files={"file": f})
-print(response.json())
-```
-
-### Model Details
-- Input size: 128x128 RGB image
-- Classes: (see plantvillage_data subfolders)
-- Accuracy: ~77% (see `classification_report.txt`)
-
-### Evaluation & Analysis
-- Run `python3 evaluate_plant_disease_model.py` to evaluate the model and save reports.
-- Run `python3 analyze_misclassifications.py` to analyze misclassified images.
-
-### Batch Prediction
-- Use `python3 batch_predict_plant_disease_api.py` to predict a folder of images and save results.
+   - This will:
+     - Check image quality
+     - Split into `train` and `validation` folders
+     - Resize images
+     - Generate analysis reports
 
 ---
 
-## Data Augmentation (for training)
-- See `train_plantvillage_cnn.py` for augmentation options (rotation, flip, zoom, etc.).
-- Add more images to `plantvillage_data` for improved robustness.
+## Model Training
+1. **Train the model:**
+   ```bash
+   python train_plantvillage_cnn.py
+   ```
+   - The script uses EfficientNet (B0/B3) and advanced augmentation for high accuracy.
+   - Training logs and best model are saved in the `models/` and `logs/` directories.
+   - **Tip:** Use a GPU for much faster training.
+2. **Monitor training:**
+   - Use TensorBoard for real-time monitoring:
+     ```bash
+     tensorboard --logdir logs/
+     ```
 
 ---
 
-## Continuous Integration
-- Add a `.github/workflows/python-app.yml` for CI/CD (example below):
-```yaml
-name: Python application
-on: [push]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: pip install fastapi uvicorn tensorflow numpy python-multipart
-    - name: Run evaluation
-      run: python3 evaluate_plant_disease_model.py
-```
+## Model Evaluation
+- After training, review:
+  - `logs/plots/training_history.png` for accuracy/loss curves
+  - `logs/evaluation_results.csv` for detailed predictions
+  - `models/best_model.h5` for the best model
+- Aim for **95%+ validation accuracy**. If not achieved, see [Advanced Tips](#advanced-tips-for-high-accuracy).
+
+---
+
+## Prediction (Batch & Single)
+- Use `predict.py` to make predictions:
+  - **Single image:**
+    ```bash
+    python predict.py --image path/to/image.jpg
+    ```
+  - **Batch prediction:**
+    ```bash
+    python predict.py --dir path/to/images/
+    ```
+  - Or edit the `main()` function in `predict.py` for custom usage.
+
+---
+
+## UI Integration
+- If a UI is present (e.g., React, Vite, or other):
+  1. **Start the UI:**
+     ```bash
+     cd <ui-folder>
+     npm run dev
+     ```
+  2. **Connect the UI to the backend API** (see `plant_disease_api.py` or similar).
+  3. **Upload images and view predictions in the browser.**
+
+---
+
+## Production Deployment
+1. **Backend API:**
+   - Use `plant_disease_api.py` (Flask/FastAPI) to serve predictions.
+   - Deploy on a cloud VM, Docker, or serverless platform.
+   - Example (Flask):
+     ```bash
+     python plant_disease_api.py
+     ```
+2. **Frontend:**
+   - Deploy the UI to Vercel, Netlify, or your own server.
+3. **Model Optimization:**
+   - Convert the model to TensorFlow Lite or ONNX for edge/mobile deployment if needed.
+4. **CI/CD:**
+   - Set up GitHub Actions for automated testing and deployment.
+
+---
+
+## Advanced Tips for High Accuracy
+- **Use EfficientNetB3 or higher for best results.**
+- **Increase image size** (e.g., 224x224 or 300x300) if you have enough GPU memory.
+- **Tune augmentation**: Try stronger augmentation for more robust models.
+- **Use learning rate scheduling and early stopping.**
+- **Try transfer learning**: Unfreeze more layers of EfficientNet for fine-tuning.
+- **Use mixed precision training** for faster and more memory-efficient training (if supported by your GPU).
+- **Monitor for overfitting**: Use dropout, regularization, and data augmentation.
+- **Ensemble models**: Combine predictions from multiple models for even higher accuracy.
+
+---
+
+## Troubleshooting
+- **Low accuracy?**
+  - Check for class imbalance, data quality, or try a deeper model.
+  - Review logs and plots for signs of overfitting/underfitting.
+- **Out of memory?**
+  - Reduce batch size or image size.
+- **Deployment issues?**
+  - Check API logs, CORS settings, and model path.
+
+---
 
 ## License
+This project is licensed under the MIT License.
 
-MIT License
+## AI Agent Prompt
+
+To complete the remaining parts of this project, including advanced features and a better UI dashboard, use the following prompt with your AI agent:
+
+```
+You are a powerful AI coding assistant. Your task is to complete the PlantVillage Disease Detection project with the following requirements:
+
+1. **Model Training & Accuracy:**
+   - Ensure the model achieves 95%+ validation accuracy using EfficientNetB3 or higher.
+   - Implement advanced data augmentation, learning rate scheduling, and early stopping.
+   - Use mixed precision training if supported by the GPU.
+   - Consider ensemble methods for even higher accuracy.
+
+2. **UI Dashboard:**
+   - Create a modern, responsive UI using React/Vite or a similar framework.
+   - Include features for image upload, real-time prediction, and detailed results display.
+   - Show training metrics, model performance, and prediction confidence.
+   - Implement a user-friendly dashboard with charts, graphs, and interactive elements.
+
+3. **Backend API:**
+   - Develop a robust API using Flask or FastAPI to serve model predictions.
+   - Ensure proper error handling, logging, and security measures.
+   - Optimize the API for production deployment.
+
+4. **Deployment:**
+   - Deploy the backend API on a cloud VM, Docker, or serverless platform.
+   - Deploy the frontend UI to Vercel, Netlify, or a similar service.
+   - Set up CI/CD pipelines for automated testing and deployment.
+
+5. **Documentation:**
+   - Update the README with detailed instructions for setup, training, and deployment.
+   - Include troubleshooting tips and advanced usage guidelines.
+
+6. **Testing:**
+   - Implement unit tests for the model, API, and UI components.
+   - Ensure the project is production-ready and scalable.
+
+Please proceed step-by-step, ensuring each component is correctly implemented and integrated. Focus on high accuracy, user experience, and production readiness.
+```
+
+Use this prompt to guide the AI agent in completing the project with all the required features and improvements.
