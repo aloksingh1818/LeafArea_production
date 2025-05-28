@@ -6,11 +6,12 @@ import { toast } from 'sonner';
 import { cameraService } from '@/services/CameraService';
 import { imageProcessingService } from '@/services/ImageProcessingService';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 import PlantDiseasePredictor from './PlantDiseasePredictor';
+import { Label } from '@/components/ui/label';
 
 interface AnalysisResult {
   leafArea: number;
@@ -31,6 +32,7 @@ const Home = () => {
   const [isCalibrated, setIsCalibrated] = useState<boolean>(false);
   const [diseaseResult, setDiseaseResult] = useState<{predicted_class: string, confidence: number} | null>(null);
   const [diseaseLoading, setDiseaseLoading] = useState<boolean>(false);
+  const [analysisResults, setAnalysisResults] = useState<any | null>(null);
 
   const handleCaptureImage = async () => {
     try {
@@ -104,40 +106,149 @@ const Home = () => {
   };
 
   // Helper to convert dataURL to File (robust)
-  const dataURLtoFile = (dataurl: string, filename: string) => {
-    const arr = dataurl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+  const dataURLtoFile = async (imageUrl: string, filename: string) => {
+    try {
+      // Check if imageUrl is valid
+      if (!imageUrl || typeof imageUrl !== 'string') {
+        throw new Error('Invalid image data');
+      }
+
+      // Handle blob URLs
+      if (imageUrl.startsWith('blob:')) {
+        try {
+          const response = await fetch(imageUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch blob: ${response.statusText}`);
+          }
+          const blob = await response.blob();
+          return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+        } catch (error) {
+          console.error('Error fetching blob:', error);
+          throw new Error('Failed to process blob image data');
+        }
+      }
+
+      // Handle Capacitor camera image URLs
+      if (imageUrl.startsWith('file://') || imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+        try {
+          const response = await fetch(imageUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.statusText}`);
+          }
+          const blob = await response.blob();
+          return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+        } catch (error) {
+          console.error('Error fetching image:', error);
+          throw new Error('Failed to fetch image data');
+        }
+      }
+
+      // Handle base64 data URLs
+      if (imageUrl.startsWith('data:')) {
+        const parts = imageUrl.split(',');
+        if (parts.length !== 2) {
+          throw new Error('Invalid data URL format');
+        }
+
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const base64Data = parts[1];
+
+        try {
+          const binaryStr = window.atob(base64Data);
+          const len = binaryStr.length;
+          const arr = new Uint8Array(len);
+          
+          for (let i = 0; i < len; i++) {
+            arr[i] = binaryStr.charCodeAt(i);
+          }
+
+          return new File([arr], filename, { type: mime });
+        } catch (error) {
+          console.error('Error processing base64 data:', error);
+          throw new Error('Failed to process base64 image data');
+        }
+      }
+
+      throw new Error('Unsupported image format');
+    } catch (error) {
+      console.error('Error converting to File:', error);
+      throw error;
     }
-    return new File([u8arr], filename, { type: mime });
   };
 
   // Call FastAPI for disease prediction
-  const handleDiseasePrediction = async (imageUrl: string) => {
+  const handleDiseasePrediction = async () => {
+    if (!selectedImage) {
+      toast.error('Please select an image first');
+      return;
+    }
+
     setDiseaseLoading(true);
     setDiseaseResult(null);
     try {
-      const file = dataURLtoFile(imageUrl, 'leaf.jpg');
+      console.log('Processing image URL:', selectedImage);
+      const file = await dataURLtoFile(selectedImage, 'leaf.jpg');
+      console.log('File created:', file);
+
+      // Create a canvas to resize the image
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';  // Add this to handle CORS
+      img.src = selectedImage;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;  // Match the model's expected input size
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Could not get canvas context');
+      }
+
+      // Draw and resize the image
+      ctx.drawImage(img, 0, 0, 128, 128);
+      
+      // Convert to blob
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Could not convert canvas to blob'));
+        }, 'image/jpeg', 0.95);
+      });
+
+      // Create a new file from the blob
+      const resizedFile = new File([blob], 'leaf.jpg', { type: 'image/jpeg' });
+      console.log('Resized file created:', resizedFile);
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', resizedFile);
+
+      console.log('Sending request to API...');
       const response = await fetch('http://localhost:8000/predict', {
         method: 'POST',
         body: formData,
       });
-      const data = await response.json();
-      if (response.ok && !data.error) {
-        setDiseaseResult(data);
-      } else {
-        setDiseaseResult({ predicted_class: 'Error', confidence: 0 });
-        console.error('Disease API error:', data.error);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `API request failed with status ${response.status}`);
       }
+
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log('API response:', data);
+      setDiseaseResult(data);
+      toast.success('Disease prediction completed successfully!');
     } catch (err) {
-      setDiseaseResult({ predicted_class: 'Error', confidence: 0 });
-      console.error('Disease API exception:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to predict disease';
+      console.error('Disease prediction error:', err);
+      toast.error(errorMessage);
     } finally {
       setDiseaseLoading(false);
     }
@@ -166,7 +277,7 @@ const Home = () => {
       const result = await imageProcessingService.measureLeafArea(selectedImage);
       setAnalysisResult(result);
       // After leaf area, predict disease
-      await handleDiseasePrediction(selectedImage);
+      await handleDiseasePrediction();
       toast.success("Leaf analysis completed successfully!");
       setIsAnalyzing(false);
     } catch (error) {
@@ -183,150 +294,167 @@ const Home = () => {
     setIsCalibrated(false);
   };
 
-  return (
-    <div className="container mx-auto p-4 max-w-md bg-gradient-to-b from-green-50 to-white min-h-screen">
-      <header className="mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-3xl font-bold text-green-800">
-            Leaf Area Measurement
-          </h1>
-          <Link 
-            to="/developers" 
-            className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center gap-1"
-          >
-            <span>Meet the Developers</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-right">
-              <path d="M5 12h14"/>
-              <path d="m12 5 7 7-7 7"/>
-            </svg>
-          </Link>
-        </div>
-        <p className="text-center text-green-600 text-sm">
-          Precision Agriculture Made Simple
-        </p>
-      </header>
-      
-      {selectedImage && (
-        <Card className="mb-6 overflow-hidden border-2 border-green-200 shadow-lg">
-          <div className="aspect-w-16 aspect-h-9 relative w-full h-56">
-            <img 
-              src={selectedImage} 
-              alt="Selected Leaf" 
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            {analysisResult && (
-              <div className="absolute bottom-0 left-0 right-0 bg-green-700 bg-opacity-80 text-white p-3">
-                <div className="font-semibold">Leaf Area: {analysisResult.leafArea} cm²</div>
-                <div className="text-sm opacity-90">
-                  Green Pixels: {analysisResult.greenPixelCount.toLocaleString()}
-                </div>
-              </div>
-            )}
-          </div>
-          <CardFooter className="bg-green-100 p-3 flex justify-between">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-green-700 border-green-300"
-              onClick={resetAnalysis}
-              disabled={isAnalyzing}
-            >
-              <X className="mr-1 h-4 w-4" />
-              Remove
-            </Button>
-            <Button 
-              className="bg-green-700 hover:bg-green-800" 
-              size="sm"
-              onClick={handleAnalyzeLeaf}
-              disabled={isAnalyzing || !isCalibrated}
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader className="mr-1 h-4 w-4 animate-spin" />
-                  Analyzing...
-                </>
-              ) : "Analyze Leaf"}
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
-      
-      <Card className="mb-6 bg-white border-2 border-green-200 shadow-lg">
-        <CardHeader className="bg-green-100">
-          <CardTitle className="text-green-700 text-xl font-bold">Capture Leaf Image</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <p className="text-gray-600 mb-5 text-sm">
-            Select a method to analyze a leaf. Make sure to include a red calibration object alongside the leaf.
-          </p>
-          
-          <div className="flex flex-col gap-3">
-            <Button 
-              className="w-full bg-green-600 hover:bg-green-700 text-lg py-6 rounded-lg shadow-md flex items-center justify-center gap-3"
-              onClick={handleCaptureImage}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader className="h-5 w-5 animate-spin" />
-              ) : (
-                <Camera size={24} />
-              )}
-              {isLoading ? "Opening Camera..." : "Capture New Image"}
-            </Button>
-            
-            <Button 
-              className="w-full bg-green-600 hover:bg-green-700 text-lg py-6 rounded-lg shadow-md flex items-center justify-center gap-3"
-              onClick={handleSelectImage}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader className="h-5 w-5 animate-spin" />
-              ) : (
-                <Image size={24} />
-              )}
-              {isLoading ? "Opening Gallery..." : "Select from Gallery"}
-            </Button>
+  const handleAnalyze = async () => {
+    if (!selectedImage) {
+      toast.error('Please select an image first');
+      return;
+    }
 
-            {selectedImage && !isCalibrated && (
-              <div className="mt-4 p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-800 mb-2">
-                  Enter the area of your red reference object (in cm²):
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    value={referenceArea}
-                    onChange={(e) => setReferenceArea(e.target.value)}
-                    className="flex-1"
-                    min="0.1"
-                    step="0.1"
-                  />
-                  <Button
-                    onClick={handleCalibrate}
-                    disabled={isAnalyzing}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {isAnalyzing ? (
-                      <Loader className="h-4 w-4 animate-spin" />
-                    ) : "Calibrate"}
-                  </Button>
-                </div>
+    if (!isCalibrated) {
+      toast.error('Please set calibration first');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const results = await imageProcessingService.measureLeafArea(selectedImage);
+      setAnalysisResults(results);
+      toast.success('Analysis completed successfully');
+    } catch (error) {
+      console.error('Analysis error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to analyze image');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="container mx-auto p-4 space-y-8">
+      <div className="flex flex-col items-center space-y-4">
+        <h1 className="text-3xl font-bold text-center">Leaf Area Measurement</h1>
+        <p className="text-gray-600 text-center max-w-2xl">
+          Capture or select an image of a leaf with a red reference object for accurate area measurement.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Image Capture</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col space-y-2">
+                <Button
+                  onClick={handleCaptureImage}
+                  disabled={isLoading}
+                  className="w-full"
+                >
+                  {isLoading ? 'Capturing...' : 'Capture Image'}
+                </Button>
+                <Button
+                  onClick={handleSelectImage}
+                  disabled={isLoading}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {isLoading ? 'Selecting...' : 'Select from Gallery'}
+                </Button>
               </div>
-            )}
-            
-            <Button 
-              className="w-full bg-white text-green-700 border-2 border-green-500 hover:bg-green-50 shadow-sm text-lg py-6 rounded-lg flex items-center justify-center gap-3" 
-              variant="outline"
-              disabled={!analysisResult}
-              onClick={() => analysisResult && setIsImageDialogOpen(true)}
-            >
-              <Info size={24} />
-              {analysisResult ? "View Results" : "No Results Yet"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      
+              {selectedImage && (
+                <div className="relative aspect-video">
+                  <img
+                    src={selectedImage}
+                    alt="Selected"
+                    className="rounded-lg object-contain w-full h-full"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Calibration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col space-y-2">
+                <Label htmlFor="calibrationArea">Reference Object Area (cm²)</Label>
+                <Input
+                  id="calibrationArea"
+                  type="number"
+                  value={referenceArea}
+                  onChange={(e) => setReferenceArea(e.target.value)}
+                  placeholder="Enter area of red reference object"
+                  disabled={isAnalyzing}
+                  min="0.1"
+                  step="0.1"
+                />
+                <Button
+                  onClick={handleCalibrate}
+                  disabled={isAnalyzing || !selectedImage || !referenceArea}
+                  className="w-full"
+                >
+                  {isAnalyzing ? 'Calibrating...' : 'Calibrate'}
+                </Button>
+              </div>
+              {isCalibrated && (
+                <div className="text-sm text-green-600">
+                  Calibration completed successfully
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col space-y-2">
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing || !isCalibrated}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze Leaf Area'}
+                </Button>
+                <Button
+                  onClick={handleDiseasePrediction}
+                  disabled={diseaseLoading || !selectedImage}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                >
+                  {diseaseLoading ? 'Analyzing...' : 'Analyze Disease'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          {analysisResults && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Analysis Results</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AnalysisResults results={analysisResults} />
+              </CardContent>
+            </Card>
+          )}
+
+          {diseaseResult && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Disease Analysis</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>Predicted Class:</span>
+                    <span className="font-medium">{diseaseResult.predicted_class}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Confidence:</span>
+                    <span className="font-medium">{(diseaseResult.confidence * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
       <Card className="bg-white border-2 border-green-200 shadow-lg">
         <CardHeader className="bg-green-100">
           <CardTitle className="text-green-700 text-xl font-bold">How it Works</CardTitle>
@@ -353,6 +481,9 @@ const Home = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{analysisResult ? "Leaf Analysis Results" : "Image Confirmation"}</DialogTitle>
+            <DialogDescription>
+              {analysisResult ? "Detailed analysis of the leaf area and disease prediction" : "Confirm your image selection"}
+            </DialogDescription>
           </DialogHeader>
           
           {selectedImage && (
@@ -501,6 +632,124 @@ const Home = () => {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+};
+
+const AnalysisResults: React.FC<{ results: any }> = ({ results }) => {
+  if (!results) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Basic Measurements</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Leaf Area:</span>
+                <span className="font-medium">{results.leafArea.toFixed(2)} cm²</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Perimeter:</span>
+                <span className="font-medium">{results.leafPerimeter.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Width:</span>
+                <span className="font-medium">{results.leafWidth.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Height:</span>
+                <span className="font-medium">{results.leafHeight.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Aspect Ratio:</span>
+                <span className="font-medium">{results.leafAspectRatio.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Compactness:</span>
+                <span className="font-medium">{results.leafCompactness.toFixed(2)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Color Analysis</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Average Green:</span>
+                <span className="font-medium">{results.leafColorMetrics.averageGreen.toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Average Red:</span>
+                <span className="font-medium">{results.leafColorMetrics.averageRed.toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Average Blue:</span>
+                <span className="font-medium">{results.leafColorMetrics.averageBlue.toFixed(0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Color Variance:</span>
+                <span className="font-medium">{results.leafColorMetrics.colorVariance.toFixed(2)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Health Indicators</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Color Uniformity:</span>
+                <span className="font-medium">{(results.leafHealthIndicators.colorUniformity * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Edge Regularity:</span>
+                <span className="font-medium">{(results.leafHealthIndicators.edgeRegularity * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Texture Complexity:</span>
+                <span className="font-medium">{(results.leafHealthIndicators.textureComplexity * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pixel Statistics</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Green Pixels:</span>
+                <span className="font-medium">{results.greenPixelCount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Red Reference Pixels:</span>
+                <span className="font-medium">{results.redPixelCount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Calibration Area:</span>
+                <span className="font-medium">{results.calibrationArea} cm²</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Pixel to cm² Ratio:</span>
+                <span className="font-medium">{results.pixelToCmRatio.toFixed(6)} cm²/pixel</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

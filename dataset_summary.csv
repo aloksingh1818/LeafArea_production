@@ -1,0 +1,18 @@
+,is_valid,is_valid,message
+,count,sum,<lambda>
+class,,,
+Pepper__bell___Bacterial_spot,997,997,{'Valid image': 997}
+Pepper__bell___healthy,1478,1478,{'Valid image': 1478}
+Potato___Early_blight,1000,1000,{'Valid image': 1000}
+Potato___Late_blight,1000,1000,{'Valid image': 1000}
+Potato___healthy,152,152,{'Valid image': 152}
+Tomato_Bacterial_spot,2127,2127,{'Valid image': 2127}
+Tomato_Early_blight,1000,1000,{'Valid image': 1000}
+Tomato_Late_blight,1909,1909,{'Valid image': 1909}
+Tomato_Leaf_Mold,952,952,{'Valid image': 952}
+Tomato_Septoria_leaf_spot,1771,1771,{'Valid image': 1771}
+Tomato_Spider_mites_Two_spotted_spider_mite,1676,1676,{'Valid image': 1676}
+Tomato__Target_Spot,1404,1404,{'Valid image': 1404}
+Tomato__Tomato_YellowLeaf__Curl_Virus,3209,3208,"{'Valid image': 3208, 'Invalid file extension': 1}"
+Tomato__Tomato_mosaic_virus,373,373,{'Valid image': 373}
+Tomato_healthy,1591,1591,{'Valid image': 1591}
