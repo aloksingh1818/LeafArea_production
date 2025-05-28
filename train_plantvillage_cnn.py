@@ -16,13 +16,16 @@ EPOCHS = 10
 train_datagen = ImageDataGenerator(
     rescale=1./255,
     validation_split=0.2,
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    shear_range=0.2,
-    zoom_range=0.2,
+    rotation_range=30,  # increased
+    width_shift_range=0.3,  # increased
+    height_shift_range=0.3,  # increased
+    shear_range=0.3,  # increased
+    zoom_range=0.3,  # increased
     horizontal_flip=True,
-    fill_mode='nearest'
+    vertical_flip=True,  # added
+    fill_mode='nearest',
+    brightness_range=[0.7,1.3],  # wider range
+    channel_shift_range=40.0  # increased
 )
 
 train_generator = train_datagen.flow_from_directory(
@@ -72,3 +75,7 @@ history = model.fit(
 # Save model
 model.save(MODEL_SAVE_PATH)
 print(f"Model saved to {MODEL_SAVE_PATH}")
+
+# Evaluate model on validation set
+val_loss, val_acc = model.evaluate(val_generator)
+print(f"Validation accuracy: {val_acc:.4f}, Validation loss: {val_loss:.4f}")

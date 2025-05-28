@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
+import PlantDiseasePredictor from './PlantDiseasePredictor';
 
 interface AnalysisResult {
   leafArea: number;
@@ -28,6 +29,8 @@ const Home = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [referenceArea, setReferenceArea] = useState<string>('1');
   const [isCalibrated, setIsCalibrated] = useState<boolean>(false);
+  const [diseaseResult, setDiseaseResult] = useState<{predicted_class: string, confidence: number} | null>(null);
+  const [diseaseLoading, setDiseaseLoading] = useState<boolean>(false);
 
   const handleCaptureImage = async () => {
     try {
@@ -100,16 +103,54 @@ const Home = () => {
     }
   };
 
+  // Helper to convert dataURL to File (robust)
+  const dataURLtoFile = (dataurl: string, filename: string) => {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  // Call FastAPI for disease prediction
+  const handleDiseasePrediction = async (imageUrl: string) => {
+    setDiseaseLoading(true);
+    setDiseaseResult(null);
+    try {
+      const file = dataURLtoFile(imageUrl, 'leaf.jpg');
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('http://localhost:8000/predict', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (response.ok && !data.error) {
+        setDiseaseResult(data);
+      } else {
+        setDiseaseResult({ predicted_class: 'Error', confidence: 0 });
+        console.error('Disease API error:', data.error);
+      }
+    } catch (err) {
+      setDiseaseResult({ predicted_class: 'Error', confidence: 0 });
+      console.error('Disease API exception:', err);
+    } finally {
+      setDiseaseLoading(false);
+    }
+  };
+
   const handleAnalyzeLeaf = async () => {
     if (!selectedImage || !isCalibrated) {
       toast.error("Please calibrate first with a reference object.");
       return;
     }
-    
     try {
       setIsAnalyzing(true);
       setAnalysisProgress(0);
-      
       // Simulate progress
       const interval = setInterval(() => {
         setAnalysisProgress(prev => {
@@ -121,11 +162,11 @@ const Home = () => {
           return newProgress;
         });
       }, 200);
-
       // Measure leaf area
       const result = await imageProcessingService.measureLeafArea(selectedImage);
       setAnalysisResult(result);
-      
+      // After leaf area, predict disease
+      await handleDiseasePrediction(selectedImage);
       toast.success("Leaf analysis completed successfully!");
       setIsAnalyzing(false);
     } catch (error) {
@@ -433,6 +474,29 @@ const Home = () => {
                   Developed by Alok, Sharique, and Arif &copy; 2025
                 </p>
               </div>
+            </div>
+          )}
+          {diseaseResult && (
+            <div className="p-4 bg-yellow-50 rounded-md mb-4">
+              <h3 className="font-bold text-yellow-800 mb-2">Disease Prediction:</h3>
+              {diseaseLoading ? (
+                <div className="text-green-700">Predicting disease...</div>
+              ) : diseaseResult && (
+                diseaseResult.predicted_class === 'Error' ? (
+                  <div className="text-red-700">Disease prediction failed. Please try again.</div>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Predicted Disease:</span>
+                      <span className="font-semibold">{diseaseResult.predicted_class}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Confidence:</span>
+                      <span className="font-semibold">{diseaseResult.confidence ? (diseaseResult.confidence * 100).toFixed(2) : '--'}%</span>
+                    </div>
+                  </>
+                )
+              )}
             </div>
           )}
         </DialogContent>
