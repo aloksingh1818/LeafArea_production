@@ -1,7 +1,9 @@
 import os
-# Set environment variables to suppress warnings
+# Set environment variables to suppress warnings and disable CUDA
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow logging
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom operations
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Disable GPU
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,8 +57,18 @@ def load_model_safely():
     except Exception as e1:
         logger.warning(f"First loading attempt failed: {str(e1)}")
         try:
-            # Try loading with legacy format
-            model = tf.keras.models.load_model(MODEL_PATH, compile=False, custom_objects=None)
+            # Try loading with legacy format and custom input shape
+            model = tf.keras.models.load_model(
+                MODEL_PATH,
+                compile=False,
+                custom_objects={
+                    'InputLayer': lambda config: InputLayer(
+                        input_shape=(128, 128, 3),
+                        dtype='float32',
+                        name='input_layer'
+                    )
+                }
+            )
             logger.info("Model loaded successfully with legacy format")
         except Exception as e2:
             logger.error(f"Second loading attempt failed: {str(e2)}")
@@ -65,8 +77,7 @@ def load_model_safely():
                 model = tf.keras.models.load_model(
                     MODEL_PATH,
                     compile=False,
-                    custom_objects=None,
-                    options=tf.saved_model.LoadOptions(experimental_io_device='/job:localhost')
+                    custom_objects=None
                 )
                 logger.info("Model loaded successfully with minimal configuration")
             except Exception as e3:
