@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 
 # Load your trained model (update path if needed)
-MODEL_PATH = 'plant_disease_model.h5'
+MODEL_PATH = 'plant_disease_model.keras'
 model = load_model(MODEL_PATH)
 
 # Load class names dynamically (assumes subfolders in train dir)

@@ -12,6 +12,19 @@ export default defineConfig(({ mode }) => ({
     headers: {
       'Service-Worker-Allowed': '/',
     },
+    proxy: {
+      '/predict': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        // Allow POST file upload
+        secure: false,
+      },
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   plugins: [react()],
   resolve: {

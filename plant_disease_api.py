@@ -36,7 +36,10 @@ except Exception as e:
 # Get class names from the training directory
 DATASET_PATH = os.path.join(os.path.dirname(__file__), 'plantvillage_data')
 try:
-    class_names = sorted([d for d in os.listdir(DATASET_PATH) if os.path.isdir(os.path.join(DATASET_PATH, d))])
+    class_names = sorted([
+        d for d in os.listdir(DATASET_PATH)
+        if os.path.isdir(os.path.join(DATASET_PATH, d)) and d not in ['train', 'validation']
+    ])
     logger.info(f"Found {len(class_names)} classes: {class_names}")
 except Exception as e:
     logger.error(f"Error loading class names: {str(e)}")
@@ -84,6 +87,10 @@ async def predict(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+@app.get("/")
+def root():
+    return {"message": "Plant Disease Detection API is running."}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

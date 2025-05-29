@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const API_URL = 'http://localhost:8000/predict';
+const API_URL = '/predict'; // Use relative path for Vite proxy
 
 const PlantDiseasePredictor = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -21,7 +21,7 @@ const PlantDiseasePredictor = () => {
     setError(null);
     setResult(null);
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    formData.append('file', selectedFile); // Use 'file' as the form key
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -31,7 +31,7 @@ const PlantDiseasePredictor = () => {
       if (response.ok) {
         setResult(data);
       } else {
-        setError(data.error || 'Prediction failed.');
+        setError(data.error || 'Analysis failed.');
       }
     } catch (err) {
       setError('Network error.');
@@ -42,7 +42,10 @@ const PlantDiseasePredictor = () => {
 
   return (
     <div className="max-w-md mx-auto p-4 bg-white rounded shadow mt-8">
-      <h2 className="text-2xl font-bold mb-4 text-green-700">Plant Disease Predictor</h2>
+      <h2 className="text-2xl font-bold mb-4 text-green-700">Plant Leaf Area & Disease Analysis</h2>
+      <div className="mb-2 text-sm text-gray-600">
+        Model accuracy: <span className="font-semibold text-yellow-700">69%</span> (current model)
+      </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <input type="file" accept="image/*" onChange={handleFileChange} />
         <button
@@ -50,13 +53,14 @@ const PlantDiseasePredictor = () => {
           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
           disabled={!selectedFile || loading}
         >
-          {loading ? 'Predicting...' : 'Predict Disease'}
+          {loading ? 'Analyzing...' : 'Analyze Leaf'}
         </button>
       </form>
       {result && (
         <div className="mt-4 p-3 bg-green-50 rounded border border-green-200">
-          <div className="font-semibold">Prediction: <span className="text-green-800">{result.predicted_class}</span></div>
-          <div>Confidence: {(result.confidence * 100).toFixed(2)}%</div>
+          <div className="font-semibold mb-1">Results:</div>
+          <div>Disease: <span className="text-green-800">{result.predicted_class || 'N/A'}</span></div>
+          <div>Confidence: {result.confidence !== undefined ? (result.confidence * 100).toFixed(2) : 'N/A'}%</div>
         </div>
       )}
       {error && (

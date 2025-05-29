@@ -128,7 +128,7 @@ class PlantDiseaseTrainer:
                 while True:
                     idxs = np.random.choice(len(X_res), self.batch_size)
                     batch_x = [X_res[i][0] for i in idxs]
-                    batch_y = [y_res[i] for i
+                    batch_y = [y_res[i] for i in idxs]
                     images = [img_to_array(load_img(f, target_size=self.img_size))/255.0 for f in batch_x]
                     yield np.stack(images), tf.keras.utils.to_categorical(batch_y, num_classes=len(train_generator.class_indices))
             train_gen = balanced_generator()
@@ -273,11 +273,14 @@ class PlantDiseaseTrainer:
             # Save ensemble info
             if self.ensemble_size > 1:
                 logger.info(f"Ensemble of {self.ensemble_size} models trained.")
-            
+
             # Plot and evaluate last model
             self.plot_training_history(histories[-1])
             self.evaluate_model(validation_generator, models)
-            
+
+            # Save the last trained model as plant_disease_model_full.h5 in root
+            self.model.save('plant_disease_model_full.h5')
+
             logger.info("Training completed successfully!")
             
         except Exception as e:

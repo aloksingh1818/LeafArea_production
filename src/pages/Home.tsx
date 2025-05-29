@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PlantDiseasePredictor from './PlantDiseasePredictor';
 import { Label } from '@/components/ui/label';
 
@@ -33,6 +33,7 @@ const Home = () => {
   const [diseaseResult, setDiseaseResult] = useState<{predicted_class: string, confidence: number} | null>(null);
   const [diseaseLoading, setDiseaseLoading] = useState<boolean>(false);
   const [analysisResults, setAnalysisResults] = useState<any | null>(null);
+  const navigate = useNavigate();
 
   const handleCaptureImage = async () => {
     try {
@@ -319,7 +320,19 @@ const Home = () => {
   };
 
   return (
-    <div className="container mx-auto p-4 space-y-8">
+    <div className="max-w-2xl mx-auto p-6 bg-white rounded shadow mt-8">
+      <h1 className="text-3xl font-bold mb-4 text-green-700">PlantVillage Leaf Area & Disease Detection</h1>
+      <p className="mb-6 text-gray-700">
+        Upload a plant leaf image to measure its area and detect possible diseases using AI.<br/>
+        <span className="text-yellow-700 font-semibold">Current model accuracy: 69%</span>
+      </p>
+      <Button
+        className="bg-green-600 text-white px-6 py-3 rounded text-lg hover:bg-green-700 mb-8"
+        onClick={() => navigate('/predictor')}
+      >
+        Go to Leaf Area & Disease Analysis
+      </Button>
+
       <div className="flex flex-col items-center space-y-4">
         <h1 className="text-3xl font-bold text-center">Leaf Area Measurement</h1>
         <p className="text-gray-600 text-center max-w-2xl">

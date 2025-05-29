@@ -7,6 +7,8 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import Developers from "@/pages/Developers";
+import PlantDiseasePredictor from "@/pages/PlantDiseasePredictor";
+import Dashboard from "@/pages/Dashboard";
 
 // Initialize the Query Client
 const queryClient = new QueryClient();
@@ -19,6 +21,7 @@ const App: React.FC = () => {
     }
 
     // Check if running in Capacitor
+    // @ts-ignore
     if (window.Capacitor) {
       console.log('Running in Capacitor');
     }
@@ -29,7 +32,8 @@ const App: React.FC = () => {
       <TooltipProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/predictor" element={<PlantDiseasePredictor />} />
             <Route path="/developers" element={<Developers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
