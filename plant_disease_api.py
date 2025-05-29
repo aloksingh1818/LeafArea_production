@@ -55,7 +55,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Constants
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.h5')  # Try .h5 format first
 MODEL_PATH_KERAS = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras')  # Fallback to .keras format
-IMG_SIZE = (224, 224)
+IMG_SIZE = (128, 128)  # Updated to match model's expected input size
 CONFIDENCE_THRESHOLD = 0.7
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 RATE_LIMIT = 100  # requests per minute
@@ -82,10 +82,11 @@ def check_rate_limit(client_ip: str) -> bool:
 def create_custom_input_layer(config):
     """Create a custom input layer with proper configuration."""
     try:
+        # Extract input shape from config
         if 'batch_shape' in config:
-            input_shape = config['batch_shape'][1:]
+            input_shape = config['batch_shape'][1:]  # Remove batch dimension
         else:
-            input_shape = config.get('input_shape', (None, None, 3))
+            input_shape = config.get('input_shape', (128, 128, 3))  # Default to 128x128x3
         
         return InputLayer(
             input_shape=input_shape,
@@ -95,7 +96,7 @@ def create_custom_input_layer(config):
     except Exception as e:
         logger.error(f"Error creating input layer: {str(e)}")
         return InputLayer(
-            input_shape=(224, 224, 3),
+            input_shape=(128, 128, 3),  # Default to 128x128x3
             dtype='float32',
             name='input_layer'
         )
@@ -112,34 +113,57 @@ def load_model_safely():
             
         try:
             # First attempt: Try loading with custom objects and compile=False
+            logger.info(f"Attempting to load model from {model_path}")
             model = tf.keras.models.load_model(
                 model_path,
                 compile=False,
                 custom_objects={
-                    'InputLayer': lambda config: tf.keras.layers.InputLayer(
-                        input_shape=(224, 224, 3),
-                        dtype='float32',
-                        name='input_layer'
-                    )
+                    'InputLayer': create_custom_input_layer
                 }
             )
             logger.info(f"Model loaded successfully from {model_path}")
-            break
+            
+            # Verify model structure
+            if not isinstance(model, tf.keras.Model):
+                raise ValueError("Loaded object is not a valid Keras model")
+                
+            # Compile the model
+            model.compile(
+                optimizer='adam',
+                loss='categorical_crossentropy',
+                metrics=['accuracy']
+            )
+            return model
+            
         except Exception as e1:
             logger.warning(f"First loading attempt failed for {model_path}: {str(e1)}")
             try:
                 # Second attempt: Try loading with legacy format
+                logger.info("Attempting to load model with legacy format")
                 model = tf.keras.models.load_model(
                     model_path,
                     compile=False,
                     custom_objects=None
                 )
                 logger.info(f"Model loaded successfully with legacy format from {model_path}")
-                break
+                
+                # Verify model structure
+                if not isinstance(model, tf.keras.Model):
+                    raise ValueError("Loaded object is not a valid Keras model")
+                    
+                # Compile the model
+                model.compile(
+                    optimizer='adam',
+                    loss='categorical_crossentropy',
+                    metrics=['accuracy']
+                )
+                return model
+                
             except Exception as e2:
                 logger.error(f"Second loading attempt failed for {model_path}: {str(e2)}")
                 try:
                     # Third attempt: Try loading with minimal configuration
+                    logger.info("Attempting to load model with minimal configuration")
                     model = tf.keras.models.load_model(
                         model_path,
                         compile=False,
@@ -147,27 +171,36 @@ def load_model_safely():
                         options=tf.saved_model.LoadOptions(experimental_io_device='/job:localhost')
                     )
                     logger.info(f"Model loaded successfully with minimal configuration from {model_path}")
-                    break
+                    
+                    # Verify model structure
+                    if not isinstance(model, tf.keras.Model):
+                        raise ValueError("Loaded object is not a valid Keras model")
+                        
+                    # Compile the model
+                    model.compile(
+                        optimizer='adam',
+                        loss='categorical_crossentropy',
+                        metrics=['accuracy']
+                    )
+                    return model
+                    
                 except Exception as e3:
                     logger.error(f"All loading attempts failed for {model_path}: {str(e3)}")
                     last_error = e3
                     continue
-    else:
-        raise Exception(f"Failed to load model from any available path. Last error: {str(last_error)}")
+    
+    # If we get here, all attempts failed
+    error_msg = f"Failed to load model from any available path. Last error: {str(last_error)}"
+    logger.error(error_msg)
+    raise Exception(error_msg)
 
-    # Compile the model
-    model.compile(
-        optimizer='adam',
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
-
-# Load model
+# Load model with proper error handling
 try:
+    logger.info("Starting model loading process...")
     model = load_model_safely()
+    logger.info("Model loaded successfully")
 except Exception as e:
-    logger.error(f"Error loading model: {str(e)}")
+    logger.error(f"Critical error loading model: {str(e)}")
     raise
 
 # Get class names
