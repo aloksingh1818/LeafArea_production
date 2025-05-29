@@ -128,7 +128,7 @@ class PlantDiseaseTrainer:
                 while True:
                     idxs = np.random.choice(len(X_res), self.batch_size)
                     batch_x = [X_res[i][0] for i in idxs]
-                    batch_y = [y_res[i] for i in idxs]
+                    batch_y = [y_res[i] for i
                     images = [img_to_array(load_img(f, target_size=self.img_size))/255.0 for f in batch_x]
                     yield np.stack(images), tf.keras.utils.to_categorical(batch_y, num_classes=len(train_generator.class_indices))
             train_gen = balanced_generator()
@@ -365,6 +365,14 @@ class PlantDiseaseTrainer:
             class_mode='categorical',
             shuffle=True
         )
+        # Calculate class weights for debug subset
+        class_counts = train_generator.classes
+        total_samples = len(class_counts)
+        class_weights = {}
+        for class_idx in range(len(train_generator.class_indices)):
+            class_count = np.sum(class_counts == class_idx)
+            class_weights[class_idx] = total_samples / (len(train_generator.class_indices) * class_count)
+        self.class_weights = class_weights
         model = self.create_enhanced_model()
         model.fit(
             train_generator,
