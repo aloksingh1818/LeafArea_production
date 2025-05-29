@@ -5,8 +5,10 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom operations
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Disable GPU
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import InputLayer
 from tensorflow.keras.preprocessing import image
@@ -17,18 +19,30 @@ from PIL import Image
 import logging
 import cv2
 import tensorflow as tf
-
-# Configure TensorFlow for CPU optimization
-tf.config.threading.set_inter_op_parallelism_threads(2)
-tf.config.threading.set_intra_op_parallelism_threads(2)
-tf.config.set_soft_device_placement(True)
+import time
+from datetime import datetime
+import json
+from typing import Dict, Any, Optional
+import psutil
+import gc
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# Initialize FastAPI app
+app = FastAPI(
+    title="Plant Disease Detection API",
+    description="API for detecting plant diseases from leaf images",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
+# Add middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,34 +50,72 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Constants
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras')
-IMG_SIZE = (224, 224)  # Increased image size for better accuracy
-CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence threshold
+IMG_SIZE = (224, 224)
+CONFIDENCE_THRESHOLD = 0.7
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+RATE_LIMIT = 100  # requests per minute
+REQUEST_TIMEOUT = 30  # seconds
+
+# Rate limiting
+request_times: Dict[str, list] = {}
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Check if the client has exceeded the rate limit."""
+    current_time = time.time()
+    if client_ip not in request_times:
+        request_times[client_ip] = []
+    
+    # Remove old requests
+    request_times[client_ip] = [t for t in request_times[client_ip] if current_time - t < 60]
+    
+    if len(request_times[client_ip]) >= RATE_LIMIT:
+        return False
+    
+    request_times[client_ip].append(current_time)
+    return True
+
+def create_custom_input_layer(config):
+    """Create a custom input layer with proper configuration."""
+    try:
+        if 'batch_shape' in config:
+            input_shape = config['batch_shape'][1:]
+        else:
+            input_shape = config.get('input_shape', (None, None, 3))
+        
+        return InputLayer(
+            input_shape=input_shape,
+            dtype=config.get('dtype', 'float32'),
+            name=config.get('name', 'input_layer')
+        )
+    except Exception as e:
+        logger.error(f"Error creating input layer: {str(e)}")
+        return InputLayer(
+            input_shape=(224, 224, 3),
+            dtype='float32',
+            name='input_layer'
+        )
 
 def load_model_safely():
     """Safely load the model with proper error handling and version compatibility."""
     try:
-        # First try loading with custom objects and safe_mode
         custom_objects = {
-            'InputLayer': lambda config: InputLayer(
-                input_shape=config.get('input_shape', (None, None, 3)),
-                dtype=config.get('dtype', 'float32'),
-                name=config.get('name', 'input_layer')
-            )
+            'InputLayer': create_custom_input_layer
         }
-        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False, safe_mode=True)
-        logger.info("Model loaded successfully with custom objects and safe mode")
+        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
+        logger.info("Model loaded successfully with custom objects")
     except Exception as e1:
         logger.warning(f"First loading attempt failed: {str(e1)}")
         try:
-            # Try loading with legacy format and custom input shape
             model = tf.keras.models.load_model(
                 MODEL_PATH,
                 compile=False,
                 custom_objects={
                     'InputLayer': lambda config: InputLayer(
-                        input_shape=(128, 128, 3),
+                        input_shape=(224, 224, 3),
                         dtype='float32',
                         name='input_layer'
                     )
@@ -73,7 +125,6 @@ def load_model_safely():
         except Exception as e2:
             logger.error(f"Second loading attempt failed: {str(e2)}")
             try:
-                # Try loading with minimal configuration
                 model = tf.keras.models.load_model(
                     MODEL_PATH,
                     compile=False,
@@ -84,7 +135,6 @@ def load_model_safely():
                 logger.error(f"All loading attempts failed: {str(e3)}")
                 raise
 
-    # Recompile the model
     model.compile(
         optimizer='adam',
         loss='categorical_crossentropy',
@@ -92,13 +142,14 @@ def load_model_safely():
     )
     return model
 
+# Load model
 try:
     model = load_model_safely()
 except Exception as e:
     logger.error(f"Error loading model: {str(e)}")
     raise
 
-# Get class names from the training directory
+# Get class names
 DATASET_PATH = os.path.join(os.path.dirname(__file__), 'plantvillage_data')
 try:
     class_names = sorted([
@@ -110,89 +161,72 @@ except Exception as e:
     logger.error(f"Error loading class names: {str(e)}")
     raise
 
-def preprocess_image(img):
-    """Enhanced image preprocessing for better prediction accuracy."""
-    try:
-        # Resize image
-        img = img.resize(IMG_SIZE, Image.Resampling.LANCZOS)
-        
-        # Convert to RGB if needed
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Convert to numpy array
-        img_array = np.array(img)
-        
-        # Apply Gaussian blur to reduce noise
-        img_array = cv2.GaussianBlur(img_array, (5, 5), 0)
-        
-        # Normalize pixel values
-        img_array = img_array.astype('float32') / 255.0
-        
-        # Add batch dimension
-        img_array = np.expand_dims(img_array, axis=0)
-        
-        return img_array
-    except Exception as e:
-        logger.error(f"Error in image preprocessing: {str(e)}")
-        return None
-
-def check_image_quality(img):
-    """Check image quality before prediction."""
-    try:
-        # Convert to grayscale
-        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-        
-        # Check focus
-        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        focus_score = min(1.0, laplacian_var / 1000.0)
-        
-        # Check lighting
-        brightness = np.mean(gray)
-        lighting_score = 1.0 - abs(brightness - 128) / 128
-        
-        # Check contrast
-        contrast = np.std(gray)
-        contrast_score = min(1.0, contrast / 100.0)
-        
-        # Overall quality score
-        quality_score = (focus_score + lighting_score + contrast_score) / 3
-        
-        return quality_score >= 0.7  # Return True if quality is good enough
-    except Exception as e:
-        logger.error(f"Error in quality check: {str(e)}")
-        return False
-
-@app.get("/health")
-def health():
+def get_system_metrics() -> Dict[str, Any]:
+    """Get system metrics for monitoring."""
     return {
-        "status": "ok",
-        "model_loaded": model is not None,
-        "classes": len(class_names),
-        "image_size": IMG_SIZE,
-        "confidence_threshold": CONFIDENCE_THRESHOLD
+        "memory_usage": psutil.Process().memory_info().rss / 1024 / 1024,  # MB
+        "cpu_percent": psutil.Process().cpu_percent(),
+        "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    try:
-        # Read file contents
-        contents = await file.read()
-        if not contents:
-            raise HTTPException(status_code=400, detail="Empty file received")
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    """Add processing time header to response."""
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
 
-        # Load and check image
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    try:
+        metrics = get_system_metrics()
+        return {
+            "status": "healthy",
+            "model_loaded": model is not None,
+            "classes": len(class_names),
+            "image_size": IMG_SIZE,
+            "confidence_threshold": CONFIDENCE_THRESHOLD,
+            "system_metrics": metrics
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "unhealthy", "error": str(e)}
+        )
+
+@app.post("/predict")
+async def predict(request: Request, file: UploadFile = File(...)):
+    """Predict plant disease from uploaded image."""
+    try:
+        # Check rate limit
+        client_ip = request.client.host
+        if not check_rate_limit(client_ip):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Please try again later."
+            )
+
+        # Check file size
+        contents = await file.read()
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE/1024/1024}MB"
+            )
+
+        # Process image
         try:
             img = Image.open(io.BytesIO(contents))
-            
-            # Check image quality
             if not check_image_quality(img):
                 raise HTTPException(
                     status_code=400,
                     detail="Image quality too low. Please ensure good lighting and focus."
                 )
             
-            # Preprocess image
             img_array = preprocess_image(img)
             if img_array is None:
                 raise HTTPException(status_code=400, detail="Error preprocessing image")
@@ -207,7 +241,6 @@ async def predict(file: UploadFile = File(...)):
             pred_class_idx = np.argmax(preds[0])
             confidence = float(preds[0][pred_class_idx])
             
-            # Check confidence threshold
             if confidence < CONFIDENCE_THRESHOLD:
                 logger.warning(f"Low confidence prediction: {confidence:.2f}")
                 raise HTTPException(
@@ -226,6 +259,10 @@ async def predict(file: UploadFile = File(...)):
             
             logger.info(f"Prediction successful: {pred_class} with confidence {confidence:.2f}")
             
+            # Clean up memory
+            del img_array
+            gc.collect()
+            
             return {
                 "predicted_class": pred_class,
                 "confidence": confidence,
@@ -233,7 +270,8 @@ async def predict(file: UploadFile = File(...)):
                 "all_predictions": {
                     class_name: float(conf)
                     for class_name, conf in zip(class_names, preds[0])
-                }
+                },
+                "processing_time": time.time() - request.state.start_time
             }
             
         except Exception as e:
@@ -247,16 +285,25 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/")
-def root():
+async def root():
+    """Root endpoint with API information."""
     return {
         "message": "Plant Disease Detection API is running.",
         "version": "1.0.0",
         "endpoints": {
             "/health": "Check API health",
             "/predict": "Upload image for disease prediction",
-            "/": "API information"
+            "/docs": "API documentation",
+            "/redoc": "Alternative API documentation"
         }
     }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        workers=2,
+        timeout_keep_alive=75,
+        log_level="info"
+    )
