@@ -3,8 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - nvm use 20
-        - npm ci --legacy-peer-deps
+        - npm ci
     build:
       commands:
         - npm run build
@@ -16,15 +15,15 @@ frontend:
     paths:
       - node_modules/**/*
   customHeaders:
-    - pattern: 'index.html'
-      headers:
-        - key: 'Cache-Control'
-          value: 'no-cache, no-store, must-revalidate'
-    - pattern: 'assets/*'
-      headers:
-        - key: 'Cache-Control'
-          value: 'no-cache, no-store, must-revalidate'
     - pattern: '**/*'
       headers:
         - key: 'Cache-Control'
-          value: 'public, max-age=0, must-revalidate' 
+          value: 'public, max-age=0, must-revalidate'
+        - key: 'Strict-Transport-Security'
+          value: 'max-age=31536000; includeSubDomains'
+        - key: 'X-Content-Type-Options'
+          value: 'nosniff'
+        - key: 'X-Frame-Options'
+          value: 'DENY'
+        - key: 'X-XSS-Protection'
+          value: '1; mode=block' 

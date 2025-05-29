@@ -14,13 +14,13 @@ export default defineConfig(({ mode }) => ({
     },
     proxy: {
       '/predict': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
         // Allow POST file upload
         secure: false,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       },
