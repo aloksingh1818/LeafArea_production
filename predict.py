@@ -13,23 +13,12 @@ class PlantDiseasePredictor:
     def __init__(self, model_path='models/best_model.h5'):
         self.img_size = (160, 160)  # Same as training
         self.model = load_model(model_path)
-        self.class_names = [
-            'Pepper__bell___Bacterial_spot',
-            'Pepper__bell___healthy',
-            'Potato___Early_blight',
-            'Potato___Late_blight',
-            'Potato___healthy',
-            'Tomato_Bacterial_spot',
-            'Tomato_Early_blight',
-            'Tomato_Late_blight',
-            'Tomato_Leaf_Mold',
-            'Tomato_Septoria_leaf_spot',
-            'Tomato_Spider_mites_Two_spotted_spider_mite',
-            'Tomato__Target_Spot',
-            'Tomato__Tomato_YellowLeaf__Curl_Virus',
-            'Tomato__Tomato_mosaic_virus',
-            'Tomato_healthy'
-        ]
+        # Dynamically load class names from plantvillage_data directory, sorted
+        data_dir = os.path.join(os.path.dirname(__file__), 'plantvillage_data')
+        self.class_names = sorted([
+            d for d in os.listdir(data_dir)
+            if os.path.isdir(os.path.join(data_dir, d))
+        ])
     
     def preprocess_image(self, image_path):
         """Preprocess a single image for prediction."""
@@ -108,4 +97,4 @@ def main():
             print(f"Confidence: {result['confidence']:.2%}")
 
 if __name__ == "__main__":
-    main() 
+    main()
