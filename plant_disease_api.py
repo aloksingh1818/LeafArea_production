@@ -1,3 +1,8 @@
+import os
+# Set environment variables to suppress warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow logging
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom operations
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from tensorflow.keras.models import load_model
@@ -5,12 +10,16 @@ from tensorflow.keras.layers import InputLayer
 from tensorflow.keras.preprocessing import image
 import numpy as np
 import uvicorn
-import os
 import io
 from PIL import Image
 import logging
 import cv2
 import tensorflow as tf
+
+# Configure TensorFlow for CPU optimization
+tf.config.threading.set_inter_op_parallelism_threads(2)
+tf.config.threading.set_intra_op_parallelism_threads(2)
+tf.config.set_soft_device_placement(True)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +42,7 @@ CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence threshold
 def load_model_safely():
     """Safely load the model with proper error handling and version compatibility."""
     try:
-        # First try loading with custom objects
+        # First try loading with custom objects and safe_mode
         custom_objects = {
             'InputLayer': lambda config: InputLayer(
                 input_shape=config.get('input_shape', (None, None, 3)),
@@ -41,20 +50,25 @@ def load_model_safely():
                 name=config.get('name', 'input_layer')
             )
         }
-        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
-        logger.info("Model loaded successfully with custom objects")
+        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False, safe_mode=True)
+        logger.info("Model loaded successfully with custom objects and safe mode")
     except Exception as e1:
         logger.warning(f"First loading attempt failed: {str(e1)}")
         try:
-            # Try loading without custom objects
-            model = load_model(MODEL_PATH, compile=False)
-            logger.info("Model loaded successfully without custom objects")
+            # Try loading with legacy format
+            model = tf.keras.models.load_model(MODEL_PATH, compile=False, custom_objects=None)
+            logger.info("Model loaded successfully with legacy format")
         except Exception as e2:
             logger.error(f"Second loading attempt failed: {str(e2)}")
             try:
-                # Try loading with legacy format
-                model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-                logger.info("Model loaded successfully with legacy format")
+                # Try loading with minimal configuration
+                model = tf.keras.models.load_model(
+                    MODEL_PATH,
+                    compile=False,
+                    custom_objects=None,
+                    options=tf.saved_model.LoadOptions(experimental_io_device='/job:localhost')
+                )
+                logger.info("Model loaded successfully with minimal configuration")
             except Exception as e3:
                 logger.error(f"All loading attempts failed: {str(e3)}")
                 raise
