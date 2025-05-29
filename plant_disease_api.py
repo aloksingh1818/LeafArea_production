@@ -30,19 +30,17 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras'
 IMG_SIZE = (224, 224)  # Increased image size for better accuracy
 CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence threshold
 
-# Custom objects for model loading
-custom_objects = {
-    'InputLayer': lambda config: InputLayer(
-        input_shape=config.get('input_shape', (None, None, 3)),
-        dtype=config.get('dtype', 'float32'),
-        name=config.get('name', 'input_layer')
-    )
-}
-
 def load_model_safely():
     """Safely load the model with proper error handling and version compatibility."""
     try:
         # First try loading with custom objects
+        custom_objects = {
+            'InputLayer': lambda config: InputLayer(
+                input_shape=config.get('input_shape', (None, None, 3)),
+                dtype=config.get('dtype', 'float32'),
+                name=config.get('name', 'input_layer')
+            )
+        }
         model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
         logger.info("Model loaded successfully with custom objects")
     except Exception as e1:
