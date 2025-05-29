@@ -299,11 +299,16 @@ async def root():
     }
 
 if __name__ == "__main__":
+    # Get port from environment variable or default to 8000
+    port = int(os.getenv("PORT", 8000))
+    
+    # Configure uvicorn server
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=port,
         workers=2,
         timeout_keep_alive=75,
-        log_level="info"
+        log_level="info",
+        reload=False  # Disable reload in production
     )
