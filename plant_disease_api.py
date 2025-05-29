@@ -1,9 +1,13 @@
 import os
 # Set environment variables to suppress warnings and disable CUDA
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow logging
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all TensorFlow logging
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN custom operations
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Disable GPU
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+os.environ['TF_DISABLE_GPU'] = '1'
+os.environ['TF_USE_CUDNN'] = '0'
+os.environ['TF_USE_CUBLAS'] = '0'
+os.environ['TF_USE_CUFFT'] = '0'
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,21 +86,29 @@ def check_rate_limit(client_ip: str) -> bool:
 def create_custom_input_layer(config):
     """Create a custom input layer with proper configuration."""
     try:
-        # Extract input shape from config
-        if 'batch_shape' in config:
-            input_shape = config['batch_shape'][1:]  # Remove batch dimension
+        # Handle different input shape configurations
+        if isinstance(config, dict):
+            # Extract input shape from config
+            if 'input_shape' in config:
+                input_shape = config['input_shape']
+            elif 'batch_shape' in config:
+                input_shape = config['batch_shape'][1:]  # Remove batch dimension
+            else:
+                input_shape = (128, 128, 3)  # Default shape
         else:
-            input_shape = config.get('input_shape', (128, 128, 3))  # Default to 128x128x3
-        
-        return InputLayer(
+            input_shape = (128, 128, 3)  # Default shape if config is not a dict
+
+        # Create input layer with proper configuration
+        return tf.keras.layers.InputLayer(
             input_shape=input_shape,
-            dtype=config.get('dtype', 'float32'),
-            name=config.get('name', 'input_layer')
+            dtype=config.get('dtype', 'float32') if isinstance(config, dict) else 'float32',
+            name=config.get('name', 'input_layer') if isinstance(config, dict) else 'input_layer'
         )
     except Exception as e:
         logger.error(f"Error creating input layer: {str(e)}")
-        return InputLayer(
-            input_shape=(128, 128, 3),  # Default to 128x128x3
+        # Fallback to default configuration
+        return tf.keras.layers.InputLayer(
+            input_shape=(128, 128, 3),
             dtype='float32',
             name='input_layer'
         )
@@ -166,9 +178,7 @@ def load_model_safely():
                     logger.info("Attempting to load model with minimal configuration")
                     model = tf.keras.models.load_model(
                         model_path,
-                        compile=False,
-                        custom_objects=None,
-                        options=tf.saved_model.LoadOptions(experimental_io_device='/job:localhost')
+                        compile=False
                     )
                     logger.info(f"Model loaded successfully with minimal configuration from {model_path}")
                     
@@ -185,34 +195,25 @@ def load_model_safely():
                     return model
                     
                 except Exception as e3:
-                    logger.error(f"All loading attempts failed for {model_path}: {str(e3)}")
-                    last_error = e3
+                    logger.error(f"Third loading attempt failed for {model_path}: {str(e3)}")
+                    last_error = str(e3)
                     continue
     
-    # If we get here, all attempts failed
-    error_msg = f"Failed to load model from any available path. Last error: {str(last_error)}"
+    error_msg = f"Failed to load model from any available path. Last error: {last_error}"
     logger.error(error_msg)
     raise Exception(error_msg)
 
-# Load model with proper error handling
+# Load the model at startup
 try:
     logger.info("Starting model loading process...")
     model = load_model_safely()
     logger.info("Model loaded successfully")
-except Exception as e:
-    logger.error(f"Critical error loading model: {str(e)}")
-    raise
-
-# Get class names
-DATASET_PATH = os.path.join(os.path.dirname(__file__), 'plantvillage_data')
-try:
-    class_names = sorted([
-        d for d in os.listdir(DATASET_PATH)
-        if os.path.isdir(os.path.join(DATASET_PATH, d)) and d not in ['train', 'validation']
-    ])
+    
+    # Get class names from model output layer
+    class_names = model.output_names
     logger.info(f"Found {len(class_names)} classes: {class_names}")
 except Exception as e:
-    logger.error(f"Error loading class names: {str(e)}")
+    logger.error(f"Critical error loading model: {str(e)}")
     raise
 
 def get_system_metrics() -> Dict[str, Any]:

@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -22,6 +21,9 @@ wheels/
 *.egg
 
 # Virtual Environment
+.env
+.venv
+env/
 venv/
 ENV/
 
@@ -31,47 +33,56 @@ ENV/
 *.swp
 *.swo
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
 # Model files
-models/*.h5
-models/*.hdf5
+*.h5
+*.keras
+*.pb
+*.tflite
+*.pt
+*.pth
 
-# Dataset
+# Data files
+*.csv
+*.txt
+!requirements.txt
+!README.md
 plantvillage_data/
+plantvillage_data_debug/
 
 # Node
 node_modules/
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # Build
+dist/
+build/
+.next/
 out/
 
-# Environment variables
-.env
-.env.local
-.env.development
-.env.production
-
 # Misc
-Thumbs.db
+.DS_Store
+*.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Development files
+test_*.py
+train_*.py
+verify_*.py
+prepare_*.py
+download_*.py
+explore_*.py
+analyze_*.py
+batch_*.py
+create_*.py
+evaluate_*.py
+
+# Duplicate configs
+tailwind.config.js
+capacitor.config.ts
+bun.lockb
