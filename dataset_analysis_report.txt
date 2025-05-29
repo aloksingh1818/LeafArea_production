@@ -6,21 +6,21 @@ Valid Images: 20638
 Invalid Images: 1
 
 Class Distribution:
-- Pepper__bell___Bacterial_spot: 997 images
+- Tomato_Leaf_Mold: 952 images
+- Tomato_Spider_mites_Two_spotted_spider_mite: 1676 images
+- Tomato__Tomato_mosaic_virus: 373 images
+- Potato___Late_blight: 1000 images
+- Tomato__Target_Spot: 1404 images
+- Potato___healthy: 152 images
+- Tomato__Tomato_YellowLeaf__Curl_Virus: 3208 images
+- Tomato_Septoria_leaf_spot: 1771 images
 - Pepper__bell___healthy: 1478 images
 - Potato___Early_blight: 1000 images
-- Potato___healthy: 152 images
-- Potato___Late_blight: 1000 images
+- Tomato_healthy: 1591 images
 - Tomato_Bacterial_spot: 2127 images
 - Tomato_Early_blight: 1000 images
-- Tomato_healthy: 1591 images
+- Pepper__bell___Bacterial_spot: 997 images
 - Tomato_Late_blight: 1909 images
-- Tomato_Leaf_Mold: 952 images
-- Tomato_Septoria_leaf_spot: 1771 images
-- Tomato_Spider_mites_Two_spotted_spider_mite: 1676 images
-- Tomato__Target_Spot: 1404 images
-- Tomato__Tomato_mosaic_virus: 373 images
-- Tomato__Tomato_YellowLeaf__Curl_Virus: 3208 images
 
 Invalid Extensions:
-- F:\LeafArea_production\plantvillage_data\Tomato__Tomato_YellowLeaf__Curl_Virus\svn-r6Yb5c
+- /workspaces/LeafArea_production/plantvillage_data/Tomato__Tomato_YellowLeaf__Curl_Virus/svn-r6Yb5c

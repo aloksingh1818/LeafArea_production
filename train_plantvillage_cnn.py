@@ -2,7 +2,7 @@ import os
 import logging
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.applications import EfficientNetB3
+from tensorflow.keras.applications import EfficientNetB3, EfficientNetB4, EfficientNetB5
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import pandas as pd
+from tensorflow.keras import mixed_precision
 
 # Set up logging
 logging.basicConfig(
@@ -25,14 +26,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class PlantDiseaseTrainer:
-    def __init__(self):
+    def __init__(self, img_size=(224, 224), model_version='B3', use_mixed_precision=True, ensemble_size=1):
         self.train_dir = os.path.join('plantvillage_data', 'train')
         self.val_dir = os.path.join('plantvillage_data', 'validation')
-        self.img_size = (160, 160)  # Reduced image size for faster training
-        self.batch_size = 128  # Increased batch size
-        self.epochs = 30  # Reduced epochs
+        self.img_size = img_size
+        self.batch_size = 128
+        self.epochs = 30
         self.learning_rate = 0.001
         self.class_weights = None
+        self.model_version = model_version
+        self.ensemble_size = ensemble_size
+        self.use_mixed_precision = use_mixed_precision
+        
+        # Enable mixed precision if requested and supported
+        if self.use_mixed_precision:
+            try:
+                mixed_precision.set_global_policy('mixed_float16')
+                logger.info("Mixed precision training enabled.")
+            except Exception as e:
+                logger.warning(f"Mixed precision not enabled: {e}")
         
         # Create log directory
         self.log_dir = os.path.join('logs', datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -100,30 +112,33 @@ class PlantDiseaseTrainer:
     
     def create_enhanced_model(self):
         """Create an enhanced model architecture for better performance."""
-        logger.info("Creating enhanced model architecture...")
+        logger.info(f"Creating EfficientNet{self.model_version} model architecture...")
         
-        # Load pre-trained EfficientNetB0 (smaller model)
-        base_model = tf.keras.applications.EfficientNetB0(
-            weights='imagenet',
-            include_top=False,
-            input_shape=(*self.img_size, 3)
-        )
+        # Select EfficientNet version
+        if self.model_version == 'B3':
+            base_model = EfficientNetB3(weights='imagenet', include_top=False, input_shape=(*self.img_size, 3))
+        elif self.model_version == 'B4':
+            base_model = EfficientNetB4(weights='imagenet', include_top=False, input_shape=(*self.img_size, 3))
+        elif self.model_version == 'B5':
+            base_model = EfficientNetB5(weights='imagenet', include_top=False, input_shape=(*self.img_size, 3))
+        else:
+            base_model = EfficientNetB3(weights='imagenet', include_top=False, input_shape=(*self.img_size, 3))
         
         # Freeze early layers
-        for layer in base_model.layers[:-20]:  # Freeze fewer layers
+        for layer in base_model.layers[:-20]:
             layer.trainable = False
         
         # Add custom layers
         x = base_model.output
         x = GlobalAveragePooling2D()(x)
         x = BatchNormalization()(x)
-        x = Dense(512, activation='relu')(x)  # Reduced dense layer size
+        x = Dense(512, activation='relu')(x)
         x = Dropout(0.3)(x)
         x = BatchNormalization()(x)
-        x = Dense(256, activation='relu')(x)  # Reduced dense layer size
+        x = Dense(256, activation='relu')(x)
         x = Dropout(0.3)(x)
         x = BatchNormalization()(x)
-        predictions = Dense(len(self.class_weights), activation='softmax')(x)
+        predictions = Dense(len(self.class_weights), activation='softmax', dtype='float32')(x)
         
         # Create model
         model = Model(inputs=base_model.input, outputs=predictions)
@@ -183,35 +198,42 @@ class PlantDiseaseTrainer:
         return [checkpoint, early_stopping, reduce_lr, tensorboard]
     
     def train(self):
-        """Train the model with advanced techniques."""
+        """Train the model with advanced techniques, optionally as an ensemble."""
         try:
             # Create data generators
             train_generator, validation_generator = self.create_advanced_data_generators()
             
-            # Create model
-            self.model = self.create_enhanced_model()
-            
             # Create callbacks
             callbacks = self.create_callbacks()
             
-            # Train model
-            logger.info("Starting model training...")
-            history = self.model.fit(
-                train_generator,
-                epochs=self.epochs,
-                validation_data=validation_generator,
-                callbacks=callbacks,
-                class_weight=self.class_weights
-            )
+            histories = []
+            models = []
+            for i in range(self.ensemble_size):
+                logger.info(f"Training model {i+1}/{self.ensemble_size}...")
+                # Create model
+                self.model = self.create_enhanced_model()
+                
+                # Train model
+                history = self.model.fit(
+                    train_generator,
+                    epochs=self.epochs,
+                    validation_data=validation_generator,
+                    callbacks=callbacks,
+                    class_weight=self.class_weights
+                )
+                
+                # Save model
+                self.model.save(os.path.join(self.model_dir, f'final_model_{i+1}.h5'))
+                histories.append(history)
+                models.append(self.model)
             
-            # Save final model
-            self.model.save(os.path.join(self.model_dir, 'final_model.h5'))
+            # Save ensemble info
+            if self.ensemble_size > 1:
+                logger.info(f"Ensemble of {self.ensemble_size} models trained.")
             
-            # Generate and save training plots
-            self.plot_training_history(history)
-            
-            # Evaluate model
-            self.evaluate_model(validation_generator)
+            # Plot and evaluate last model
+            self.plot_training_history(histories[-1])
+            self.evaluate_model(validation_generator, models)
             
             logger.info("Training completed successfully!")
             
@@ -248,10 +270,15 @@ class PlantDiseaseTrainer:
         plt.savefig(os.path.join(plots_dir, 'training_history.png'))
         plt.close()
     
-    def evaluate_model(self, validation_generator):
-        """Evaluate model performance."""
-        # Get predictions
-        predictions = self.model.predict(validation_generator)
+    def evaluate_model(self, validation_generator, models=None):
+        """Evaluate model or ensemble performance."""
+        if models is None:
+            models = [self.model]
+        # Get predictions from all models and average
+        preds = []
+        for m in models:
+            preds.append(m.predict(validation_generator))
+        predictions = np.mean(preds, axis=0)
         y_pred = np.argmax(predictions, axis=1)
         y_true = validation_generator.classes
         
@@ -270,7 +297,8 @@ class PlantDiseaseTrainer:
         pd.DataFrame(results).to_csv(os.path.join(self.log_dir, 'evaluation_results.csv'), index=False)
 
 def main():
-    trainer = PlantDiseaseTrainer()
+    # Example: Use EfficientNetB3, 224x224, mixed precision, ensemble of 1
+    trainer = PlantDiseaseTrainer(img_size=(224,224), model_version='B3', use_mixed_precision=True, ensemble_size=1)
     trainer.train()
 
 if __name__ == "__main__":
