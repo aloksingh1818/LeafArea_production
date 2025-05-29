@@ -10,6 +10,7 @@ import io
 from PIL import Image
 import logging
 import cv2
+import tensorflow as tf
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,12 +39,38 @@ custom_objects = {
     )
 }
 
-try:
-    # Load model with custom objects
-    model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
+def load_model_safely():
+    """Safely load the model with proper error handling and version compatibility."""
+    try:
+        # First try loading with custom objects
+        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
+        logger.info("Model loaded successfully with custom objects")
+    except Exception as e1:
+        logger.warning(f"First loading attempt failed: {str(e1)}")
+        try:
+            # Try loading without custom objects
+            model = load_model(MODEL_PATH, compile=False)
+            logger.info("Model loaded successfully without custom objects")
+        except Exception as e2:
+            logger.error(f"Second loading attempt failed: {str(e2)}")
+            try:
+                # Try loading with legacy format
+                model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+                logger.info("Model loaded successfully with legacy format")
+            except Exception as e3:
+                logger.error(f"All loading attempts failed: {str(e3)}")
+                raise
+
     # Recompile the model
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    logger.info("Model loaded successfully")
+    model.compile(
+        optimizer='adam',
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    return model
+
+try:
+    model = load_model_safely()
 except Exception as e:
     logger.error(f"Error loading model: {str(e)}")
     raise
