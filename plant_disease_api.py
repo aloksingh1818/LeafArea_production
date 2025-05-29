@@ -53,7 +53,8 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Constants
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras')
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.h5')  # Try .h5 format first
+MODEL_PATH_KERAS = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras')  # Fallback to .keras format
 IMG_SIZE = (224, 224)
 CONFIDENCE_THRESHOLD = 0.7
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
@@ -101,40 +102,60 @@ def create_custom_input_layer(config):
 
 def load_model_safely():
     """Safely load the model with proper error handling and version compatibility."""
-    try:
-        custom_objects = {
-            'InputLayer': create_custom_input_layer
-        }
-        model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
-        logger.info("Model loaded successfully with custom objects")
-    except Exception as e1:
-        logger.warning(f"First loading attempt failed: {str(e1)}")
+    model_paths = [MODEL_PATH, MODEL_PATH_KERAS]
+    last_error = None
+    
+    for model_path in model_paths:
+        if not os.path.exists(model_path):
+            logger.warning(f"Model file not found: {model_path}")
+            continue
+            
         try:
+            # First attempt: Try loading with custom objects and compile=False
             model = tf.keras.models.load_model(
-                MODEL_PATH,
+                model_path,
                 compile=False,
                 custom_objects={
-                    'InputLayer': lambda config: InputLayer(
+                    'InputLayer': lambda config: tf.keras.layers.InputLayer(
                         input_shape=(224, 224, 3),
                         dtype='float32',
                         name='input_layer'
                     )
                 }
             )
-            logger.info("Model loaded successfully with legacy format")
-        except Exception as e2:
-            logger.error(f"Second loading attempt failed: {str(e2)}")
+            logger.info(f"Model loaded successfully from {model_path}")
+            break
+        except Exception as e1:
+            logger.warning(f"First loading attempt failed for {model_path}: {str(e1)}")
             try:
+                # Second attempt: Try loading with legacy format
                 model = tf.keras.models.load_model(
-                    MODEL_PATH,
+                    model_path,
                     compile=False,
                     custom_objects=None
                 )
-                logger.info("Model loaded successfully with minimal configuration")
-            except Exception as e3:
-                logger.error(f"All loading attempts failed: {str(e3)}")
-                raise
+                logger.info(f"Model loaded successfully with legacy format from {model_path}")
+                break
+            except Exception as e2:
+                logger.error(f"Second loading attempt failed for {model_path}: {str(e2)}")
+                try:
+                    # Third attempt: Try loading with minimal configuration
+                    model = tf.keras.models.load_model(
+                        model_path,
+                        compile=False,
+                        custom_objects=None,
+                        options=tf.saved_model.LoadOptions(experimental_io_device='/job:localhost')
+                    )
+                    logger.info(f"Model loaded successfully with minimal configuration from {model_path}")
+                    break
+                except Exception as e3:
+                    logger.error(f"All loading attempts failed for {model_path}: {str(e3)}")
+                    last_error = e3
+                    continue
+    else:
+        raise Exception(f"Failed to load model from any available path. Last error: {str(last_error)}")
 
+    # Compile the model
     model.compile(
         optimizer='adam',
         loss='categorical_crossentropy',
