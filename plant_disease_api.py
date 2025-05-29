@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import InputLayer
 from tensorflow.keras.preprocessing import image
 import numpy as np
 import uvicorn
@@ -28,8 +29,20 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), 'plant_disease_model.keras'
 IMG_SIZE = (224, 224)  # Increased image size for better accuracy
 CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence threshold
 
+# Custom objects for model loading
+custom_objects = {
+    'InputLayer': lambda config: InputLayer(
+        input_shape=config.get('input_shape', (None, None, 3)),
+        dtype=config.get('dtype', 'float32'),
+        name=config.get('name', 'input_layer')
+    )
+}
+
 try:
-    model = load_model(MODEL_PATH)
+    # Load model with custom objects
+    model = load_model(MODEL_PATH, custom_objects=custom_objects, compile=False)
+    # Recompile the model
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     logger.info("Model loaded successfully")
 except Exception as e:
     logger.error(f"Error loading model: {str(e)}")
