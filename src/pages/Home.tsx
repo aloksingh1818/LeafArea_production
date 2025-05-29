@@ -323,8 +323,7 @@ const Home = () => {
     <div className="max-w-2xl mx-auto p-6 bg-white rounded shadow mt-8">
       <h1 className="text-3xl font-bold mb-4 text-green-700">PlantVillage Leaf Area & Disease Detection</h1>
       <p className="mb-6 text-gray-700">
-        Upload a plant leaf image to measure its area and detect possible diseases using AI.<br/>
-        <span className="text-yellow-700 font-semibold">Current model accuracy: 69%</span>
+        Upload a plant leaf image to measure its area and detect possible diseases using AI.
       </p>
       <Button
         className="bg-green-600 text-white px-6 py-3 rounded text-lg hover:bg-green-700 mb-8"

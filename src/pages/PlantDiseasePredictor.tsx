@@ -43,9 +43,6 @@ const PlantDiseasePredictor = () => {
   return (
     <div className="max-w-md mx-auto p-4 bg-white rounded shadow mt-8">
       <h2 className="text-2xl font-bold mb-4 text-green-700">Plant Leaf Area & Disease Analysis</h2>
-      <div className="mb-2 text-sm text-gray-600">
-        Model accuracy: <span className="font-semibold text-yellow-700">69%</span> (current model)
-      </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <input type="file" accept="image/*" onChange={handleFileChange} />
         <button
